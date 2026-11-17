@@ -1151,6 +1151,7 @@ void TritonRoute::getDRCMarkers(frList<std::unique_ptr<frMarker>>& markers,
                                 const odb::Rect& requiredDrcBox)
 {
   std::vector<std::vector<std::unique_ptr<FlexGCWorker>>> workersBatches(1);
+  std::map<const FlexGCWorker*, odb::Rect> workerDrcBoxes;
   auto size = 7;
   auto offset = 0;
   auto gCellPatterns = design_->getTopBlock()->getGCellPatterns();
@@ -1178,6 +1179,7 @@ void TritonRoute::getDRCMarkers(frList<std::unique_ptr<frMarker>>& markers,
       auto gcWorker = std::make_unique<FlexGCWorker>(
           design_->getTech(), logger_, router_cfg_.get());
       gcWorker->setDrcBox(drcBox);
+      workerDrcBoxes[gcWorker.get()] = drcBox;
       gcWorker->setExtBox(extBox);
       if (workersBatches.back().size() >= router_cfg_->BATCHSIZE) {
         workersBatches.emplace_back();
@@ -1196,7 +1198,10 @@ void TritonRoute::getDRCMarkers(frList<std::unique_ptr<frMarker>>& markers,
     for (const auto& worker : workers) {
       for (auto& marker : worker->getMarkers()) {
         odb::Rect bbox = marker->getBBox();
-        if (!bbox.intersects(requiredDrcBox)) {
+        // Outside the checking region, geometry is context only and can be
+        // incomplete at the extBox boundary. Do not report its markers.
+        if (!bbox.intersects(requiredDrcBox)
+            || !bbox.intersects(workerDrcBoxes.at(worker.get()))) {
           continue;
         }
         auto layerNum = marker->getLayerNum();
